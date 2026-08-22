@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FNAF Station Terminal</title>
+  <style>
+    body {
+      background: #050505;
+      color: #00ff00;
+      font-family: monospace;
+      padding: 20px;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      user-select: none;
+    }
+    h1 { margin-bottom: 5px; text-shadow: 0 0 10px #00ff00; }
+    .status-online { color: #00ff00; font-size: 0.9rem; margin-bottom: 20px; }
+    .status-offline { color: #ff0000; font-size: 0.9rem; margin-bottom: 20px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      width: 100%;
+      max-width: 950px;
+    }
+    .panel {
+      border: 2px solid #00ff00;
+      background: #111;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 255, 0, 0.2);
+      position: relative;
+    }
+    .panel.sabotaged {
+      border-color: #ff0000 !important;
+      box-shadow: 0 0 15px rgba(255, 0, 0, 0.5) !important;
+    }
+    .panel.sabotaged::after {
+      content: "⚠️ CONNECTION SABOTAGED ⚠️";
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(20, 0, 0, 0.9);
+      color: #ff0000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 1.1rem;
+      border-radius: 6px;
+      text-align: center;
+      padding: 10px;
+    }
+    .key-hint {
+      background: #222;
+      border: 1px solid #00ff00;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    .bar {
+      width: 100%;
+      background: #222;
+      height: 20px;
+      margin: 8px 0;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid #444;
+    }
+    .fill {
+      height: 100%;
+      background: #00ff00;
+      width: 0%;
+      transition: width 0.05s linear;
+    }
+    .fill-cyan { background: #00ffff; }
+    .fill-orange { background: #ffaa00; }
+  </style>
+</head>
+<body>
+
+  <h1>STATION CONTROL TERMINAL</h1>
+  <div id="connectionStatus" class="status-offline">SYSTEM OFFLINE - CONNECTING...</div>
+
+  <div class="grid">
+    <!-- CRAWLER PANEL -->
+    <div id="panelCrawler" class="panel">
+      <h3>ROBOT 1: CRAWLER</h3>
+      <p>Hold <span class="key-hint">KEY 1</span> to Charge Stealth</p>
+      <div>STEALTH POWER: <span id="valCrawler">0</span>%</div>
+      <div class="bar"><div id="fillCrawler" class="fill fill-cyan"></div></div>
+    </div>
+
+    <!-- DRAINER PANEL -->
+    <div id="panelDrainer" class="panel">
+      <h3>ROBOT 2: DRAINER</h3>
+      <p>Hold <span class="key-hint">KEY 2</span> to Stream Power</p>
+      <div>MAIN BATTERY: <span id="valDrainerBat">100</span>%</div>
+      <div class="bar"><div id="fillDrainerBat" class="fill"></div></div>
+      <div>STEAL POWER CHARGE: <span id="valDrainerSteal">0</span>%</div>
+      <div class="bar"><div id="fillDrainerSteal" class="fill fill-cyan"></div></div>
+    </div>
+
+    <!-- TANK PANEL -->
+    <div id="panelTank" class="panel">
+      <h3>ROBOT 3: TANK</h3>
+      <p>Hold <span class="key-hint">KEY 3</span> to Charge Immunity</p>
+      <div>IMMUNITY POWER: <span id="valTank">0</span>%</div>
+      <div class="bar"><div id="fillTank" class="fill fill-orange"></div></div>
+    </div>
+  </div>
+
+  <script>
+    const CHARGE_RATE = 1.5; // Amount charged per frame ticks
+    let socket = null;
+    let keysDown = {};
+
+    let stationData = {
+      CRAWLER: { stealthPwr: 0, sabotaged: false },
+      DRAINER: { battery: 100, stealPwr: 0, sabotaged: false },
+      TANK: { immunityPwr: 0, sabotaged: false }
+    };
+
+    function connectWS() {
+      try {
+        socket = new WebSocket('wss://socketsbay.com/wss/v2/1/demo/');
+        
+        socket.onopen = () => {
+          const status = document.getElementById('connectionStatus');
+          status.textContent = 'SYSTEM ONLINE - STATION LINK ACTIVE';
+          status.className = 'status-online';
+        };
+
+        socket.onclose = () => {
+          const status = document.getElementById('connectionStatus');
+          status.textContent = 'SYSTEM OFFLINE - RECONNECTING...';
+          status.className = 'status-offline';
+          setTimeout(connectWS, 2000);
+        };
+
+        socket.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+
+            if (data.type === 'SABOTAGE') {
+              triggerSabotage(data.target);
+            } else if (data.type === 'SYNC_ROBOT') {
+              if (data.role === 'CRAWLER') {
+                stationData.CRAWLER.stealthPwr = data.state.stealthPwr;
+              } else if (data.role === 'DRAINER') {
+                stationData.DRAINER.battery = data.state.battery;
+                if (data.state.stealPwr !== undefined) stationData.DRAINER.stealPwr = data.state.stealPwr;
+              } else if (data.role === 'TANK') {
+                stationData.TANK.immunityPwr = data.state.isImmune ? 0 : stationData.TANK.immunityPwr;
+              }
+              updateUI();
+            }
+          } catch (err) {}
+        };
+      } catch (e) {}
+    }
+
+    function broadcast(data) {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(data));
+      }
+    }
+
+    function triggerSabotage(target) {
+      if (stationData[target]) {
+        stationData[target].sabotaged = true;
+        const panel = document.getElementById('panel' + target.charAt(0) + target.slice(1).toLowerCase());
+        if (panel) panel.classList.add('sabotaged');
+
+        // Sabotage clears after 15 seconds
+        setTimeout(() => {
+          stationData[target].sabotaged = false;
+          if (panel) panel.classList.remove('sabotaged');
+        }, 15000);
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      keysDown[e.key] = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+      keysDown[e.key] = false;
+    });
+
+    // Main station charge tick loop (runs 20 times per second)
+    setInterval(() => {
+      // Key 1: Crawler Stealth Charge
+      if (keysDown['1'] && !stationData.CRAWLER.sabotaged) {
+        if (stationData.CRAWLER.stealthPwr < 100) {
+          stationData.CRAWLER.stealthPwr = Math.min(100, stationData.CRAWLER.stealthPwr + CHARGE_RATE);
+          broadcast({ type: 'CHARGE_UPDATE', role: 'CRAWLER', statKey: 'stealthPwr', value: stationData.CRAWLER.stealthPwr });
+        }
+      }
+
+      // Key 2: Drainer Main Battery + Steal Charge
+      if (keysDown['2'] && !stationData.DRAINER.sabotaged) {
+        if (stationData.DRAINER.battery < 100) {
+          stationData.DRAINER.battery = Math.min(100, stationData.DRAINER.battery + (CHARGE_RATE * 1.2));
+          broadcast({ type: 'UPDATE_BATTERY', battery: stationData.DRAINER.battery });
+        }
+        if (stationData.DRAINER.stealPwr < 100) {
+          stationData.DRAINER.stealPwr = Math.min(100, stationData.DRAINER.stealPwr + CHARGE_RATE);
+          broadcast({ type: 'CHARGE_UPDATE', role: 'DRAINER', statKey: 'stealPwr', value: stationData.DRAINER.stealPwr });
+        }
+      }
+
+      // Key 3: Tank Immunity Charge
+      if (keysDown['3'] && !stationData.TANK.sabotaged) {
+        if (stationData.TANK.immunityPwr < 100) {
+          stationData.TANK.immunityPwr = Math.min(100, stationData.TANK.immunityPwr + CHARGE_RATE);
+          broadcast({ type: 'CHARGE_UPDATE', role: 'TANK', statKey: 'immunityPwr', value: stationData.TANK.immunityPwr });
+        }
+      }
+
+      updateUI();
+    }, 50);
+
+    function updateUI() {
+      // Crawler UI
+      document.getElementById('valCrawler').textContent = Math.floor(stationData.CRAWLER.stealthPwr);
+      document.getElementById('fillCrawler').style.width = stationData.CRAWLER.stealthPwr + '%';
+
+      // Drainer UI
+      document.getElementById('valDrainerBat').textContent = Math.floor(stationData.DRAINER.battery);
+      document.getElementById('fillDrainerBat').style.width = stationData.DRAINER.battery + '%';
+      document.getElementById('valDrainerSteal').textContent = Math.floor(stationData.DRAINER.stealPwr);
+      document.getElementById('fillDrainerSteal').style.width = stationData.DRAINER.stealPwr + '%';
+
+      // Tank UI
+      document.getElementById('valTank').textContent = Math.floor(stationData.TANK.immunityPwr);
+      document.getElementById('fillTank').style.width = stationData.TANK.immunityPwr + '%';
+    }
+
+    connectWS();
+  </script>
+</body>
+</html>
