@@ -187,9 +187,9 @@
     let conn = null;
 
     let robotState = {
-      CRAWLER: { stealthPwr: 100, isStealth: false },
-      DRAINER: { battery: 100, stealPwr: 100 },
-      TANK: { immunityPwr: 100, isImmune: false }
+      CRAWLER: { stealthPwr: 0, isStealth: false },
+      DRAINER: { battery: 100, stealPwr: 0 },
+      TANK: { immunityPwr: 0, isImmune: false }
     };
 
     function connectStation() {
