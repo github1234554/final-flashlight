@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FNAF Flashlight</title>
+  <style>
+    body {
+      background-color: #050505;
+      color: #fff;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      user-select: none;
+    }
+    
+    .battery-container {
+      width: 80%;
+      max-width: 300px;
+      height: 30px;
+      border: 3px solid #fff;
+      border-radius: 5px;
+      padding: 3px;
+      margin-bottom: 10px;
+    }
+
+    .battery-fill {
+      height: 100%;
+      width: 100%;
+      background-color: #00ff00;
+      transition: width 0.2s, background-color 0.5s;
+    }
+
+    .status-text {
+      font-size: 1.2rem;
+      margin-bottom: 40px;
+    }
+
+    .btn {
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #444, #111);
+      border: 4px solid #666;
+      color: #fff;
+      font-size: 1.5rem;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 0 15px rgba(0,0,0,0.8);
+    }
+
+    .btn:active {
+      transform: scale(0.95);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="battery-container">
+    <div id="batteryFill" class="battery-fill"></div>
+  </div>
+  <div id="statusText" class="status-text">POWER: 100%</div>
+
+  <button id="lightBtn" class="btn">LIGHT</button>
+
+  <script>
+    let batteryLevel = 100;
+    let isLightOn = false;
+    let track = null;
+    let drainInterval = null;
+
+    const batteryFill = document.getElementById('batteryFill');
+    const statusText = document.getElementById('statusText');
+    const lightBtn = document.getElementById('lightBtn');
+
+    // Initialize Camera Torch (Android Chrome)
+    async function initTorch() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
+        track = stream.getVideoTracks()[0];
+      } catch (err) {
+        console.warn("Hardware torch unavailable or permissions denied.");
+      }
+    }
+    initTorch();
+
+    async function toggleFlashlight(turnOn) {
+      if (batteryLevel <= 0) turnOn = false;
+      isLightOn = turnOn;
+
+      // Hardware Flashlight Control
+      if (track) {
+        try {
+          await track.applyConstraints({
+            advanced: [{ torch: isLightOn }]
+          });
+        } catch (e) {
+          console.log("Torch constraint error:", e);
+        }
+      }
+
+      // Screen brightness effect fallback / visual cue
+      document.body.style.backgroundColor = isLightOn ? '#ffffff' : '#050505';
+
+      if (isLightOn) {
+        startDrain();
+      } else {
+        stopDrain();
+      }
+    }
+
+    function startDrain() {
+      if (drainInterval) return;
+      drainInterval = setInterval(() => {
+        if (batteryLevel > 0) {
+          batteryLevel -= 1; // Drain speed (1% per tick)
+          updateUI();
+        } else {
+          toggleFlashlight(false);
+        }
+      }, 300); // Ticks every 300ms (~30 seconds of continuous light)
+    }
+
+    function stopDrain() {
+      clearInterval(drainInterval);
+      drainInterval = null;
+    }
+
+    function updateUI() {
+      batteryFill.style.width = batteryLevel + '%';
+      statusText.textContent = `POWER: ${Math.max(0, batteryLevel)}%`;
+
+      if (batteryLevel > 50) {
+        batteryFill.style.backgroundColor = '#00ff00';
+      } else if (batteryLevel > 20) {
+        batteryFill.style.backgroundColor = '#ffff00';
+      } else {
+        batteryFill.style.backgroundColor = '#ff0000';
+      }
+    }
+
+    // Controls: Press & Hold or Tap to Toggle
+    lightBtn.addEventListener('touchstart', (e) => { e.preventDefault(); toggleFlashlight(true); });
+    lightBtn.addEventListener('touchend', (e) => { e.preventDefault(); toggleFlashlight(false); });
+    lightBtn.addEventListener('mousedown', () => toggleFlashlight(true));
+    lightBtn.addEventListener('mouseup', () => toggleFlashlight(false));
+  </script>
+</body>
+</html>
