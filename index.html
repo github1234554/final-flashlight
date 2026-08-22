@@ -118,7 +118,7 @@
     <div id="crawlerPrompt" style="margin:8px 0; font-weight:bold;">---</div>
     <div id="crawlerSound" style="color:#ffaa00; font-size:0.85rem;">---</div>
     <hr style="border-color:#333;">
-    <button onclick="activateStealth()">🥷 ACTIVATION: SILENT MOVE (30s)</button>
+    <button id="crawlerAbilityBtn" onclick="activateStealth()">🥷 ACTIVATION: SILENT MOVE (30s)</button>
     <button onclick="triggerJumpscare()" style="border-color:#ff0000;">😱 JUMPSCARE SOUND</button>
     <button onclick="showScreen('menuScreen')">EXIT TO MENU</button>
   </div>
@@ -129,7 +129,7 @@
     <div id="drainerPrompt" style="margin:8px 0; font-weight:bold;">---</div>
     <div id="drainerSound" style="color:#ffaa00; font-size:0.85rem;">---</div>
     <hr style="border-color:#333;">
-    <button onclick="stealGuardPower()" style="border-color:#00aaff; color:#00aaff;">⚡ STEAL GUARD POWER (-15% Flashlight)</button>
+    <button id="drainerAbilityBtn" onclick="stealGuardPower()" style="border-color:#00aaff; color:#00aaff;">⚡ STEAL GUARD POWER (-15% Flashlight)</button>
     <button onclick="triggerJumpscare()" style="border-color:#ff0000;">😱 JUMPSCARE SOUND</button>
     <button onclick="showScreen('menuScreen')">EXIT TO MENU</button>
   </div>
@@ -140,7 +140,7 @@
     <div id="tankPrompt" style="margin:8px 0; font-weight:bold;">---</div>
     <div id="tankSound" style="color:#ffaa00; font-size:0.85rem;">---</div>
     <hr style="border-color:#333;">
-    <button onclick="activateImmunity()">🛡️ ACTIVATION: MUSIC BOX IMMUNITY (30s)</button>
+    <button id="tankAbilityBtn" onclick="activateImmunity()">🛡️ ACTIVATION: MUSIC BOX IMMUNITY (30s)</button>
     <button onclick="triggerJumpscare()" style="border-color:#ff0000;">😱 JUMPSCARE SOUND</button>
     <button onclick="showScreen('menuScreen')">EXIT TO MENU</button>
   </div>
@@ -177,13 +177,13 @@
     let musicBoxInterval = null;
     let holdTimer = null;
     let robotLoops = {};
-    let lastAction = {}; // Tracks last action to prevent consecutive moves
+    let lastAction = {};
     let audioCtx = null;
     let socket = null;
 
     let robotState = {
       CRAWLER: { stealthPwr: 100, isStealth: false },
-      DRAINER: { battery: 100 },
+      DRAINER: { battery: 100, stealPwr: 100 },
       TANK: { immunityPwr: 100, isImmune: false }
     };
 
@@ -206,6 +206,15 @@
             const data = JSON.parse(e.data);
             if (data.type === 'CHARGE_UPDATE') {
               robotState[data.role][data.statKey] = data.value;
+              
+              // Enable ability buttons when fully charged
+              if (data.role === 'CRAWLER' && data.statKey === 'stealthPwr' && data.value >= 100) {
+                document.getElementById('crawlerAbilityBtn').disabled = false;
+              } else if (data.role === 'DRAINER' && data.statKey === 'stealPwr' && data.value >= 100) {
+                document.getElementById('drainerAbilityBtn').disabled = false;
+              } else if (data.role === 'TANK' && data.statKey === 'immunityPwr' && data.value >= 100) {
+                document.getElementById('tankAbilityBtn').disabled = false;
+              }
             } else if (data.type === 'UPDATE_BATTERY') {
               robotState.DRAINER.battery = data.battery;
             } else if (data.type === 'STEAL_POWER') {
@@ -405,7 +414,13 @@
     }
 
     function stealGuardPower() {
+      if (robotState.DRAINER.stealPwr < 100) return alert("Must reach 100% charge at Station first!");
+      
+      robotState.DRAINER.stealPwr = 0;
+      document.getElementById('drainerAbilityBtn').disabled = true;
+      
       broadcast({ type: 'STEAL_POWER' });
+      broadcast({ type: 'SYNC_ROBOT', role: 'DRAINER', state: robotState.DRAINER });
       alert(`SILENT STEAL ACTIVE!\nStole ${CONFIG.DRAINER_STEAL_AMOUNT}% power from Guard Flashlight!`);
     }
 
@@ -415,7 +430,6 @@
       const profile = CONFIG.ROBOT_TIMINGS[role];
 
       function cycle() {
-        // If the previous turn was MOVE, force FREEZE now
         let isMove = false;
         if (lastAction[role] === 'MOVE') {
           isMove = false;
@@ -469,8 +483,11 @@
 
     function activateStealth() {
       if (robotState.CRAWLER.stealthPwr < 100) return alert("Must reach 100% Stealth charge at Station first!");
+      
       robotState.CRAWLER.isStealth = true;
       robotState.CRAWLER.stealthPwr = 0;
+      document.getElementById('crawlerAbilityBtn').disabled = true;
+      
       broadcast({ type: 'SYNC_ROBOT', role: 'CRAWLER', state: robotState.CRAWLER });
       alert("Silent Movement Active for 30 Seconds!");
       setTimeout(() => { robotState.CRAWLER.isStealth = false; }, CONFIG.STEALTH_DURATION * 1000);
@@ -478,8 +495,11 @@
 
     function activateImmunity() {
       if (robotState.TANK.immunityPwr < 100) return alert("Must reach 100% Immunity charge at Station first!");
+      
       robotState.TANK.isImmune = true;
       robotState.TANK.immunityPwr = 0;
+      document.getElementById('tankAbilityBtn').disabled = true;
+      
       broadcast({ type: 'SYNC_ROBOT', role: 'TANK', state: robotState.TANK });
       alert("Music Box Immunity Active for 30 Seconds!");
       setTimeout(() => { robotState.TANK.isImmune = false; }, CONFIG.IMMUNITY_DURATION * 1000);
