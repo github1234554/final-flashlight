@@ -3,153 +3,356 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FNAF Flashlight</title>
+  <title>FNAF Real Life Game</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
     body {
-      background-color: #050505;
+      background-color: #0b0b0b;
       color: #fff;
       font-family: monospace;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100vh;
+      min-height: 100vh;
       margin: 0;
+      text-align: center;
       user-select: none;
     }
-    
-    .battery-container {
-      width: 80%;
-      max-width: 300px;
-      height: 30px;
-      border: 3px solid #fff;
-      border-radius: 5px;
-      padding: 3px;
-      margin-bottom: 10px;
-    }
 
-    .battery-fill {
-      height: 100%;
-      width: 100%;
-      background-color: #00ff00;
-      transition: width 0.2s, background-color 0.5s;
-    }
-
-    .status-text {
-      font-size: 1.2rem;
-      margin-bottom: 40px;
-    }
-
-    .btn {
-      width: 200px;
-      height: 200px;
-      border-radius: 50%;
-      background: radial-gradient(circle, #444, #111);
-      border: 4px solid #666;
-      color: #fff;
-      font-size: 1.5rem;
-      font-weight: bold;
-      cursor: pointer;
+    .card {
+      border: 2px solid #444;
+      padding: 20px;
+      border-radius: 10px;
+      background: #151515;
+      width: 85%;
+      max-width: 380px;
       box-shadow: 0 0 15px rgba(0,0,0,0.8);
     }
 
-    .btn:active {
-      transform: scale(0.95);
+    button {
+      background: #222;
+      color: #fff;
+      border: 2px solid #666;
+      padding: 12px 18px;
+      margin: 8px 4px;
+      font-size: 0.95rem;
+      font-family: monospace;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    button:active { background: #444; }
+
+    input {
+      padding: 10px;
+      font-family: monospace;
+      font-size: 1rem;
+      width: 70%;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+
+    .status-box {
+      font-size: 1.6rem;
+      font-weight: bold;
+      margin: 15px 0;
+      padding: 12px;
+      border-radius: 5px;
+    }
+
+    .move { background-color: #006600; color: #fff; }
+    .freeze { background-color: #990000; color: #fff; }
+
+    .bar-container {
+      width: 100%;
+      background: #333;
+      height: 18px;
+      margin: 6px 0 12px 0;
+      border-radius: 3px;
+    }
+    .bar-fill { height: 100%; background: #00ff00; width: 100%; }
+
+    .guide-box {
+      background: #222;
+      border-left: 4px solid #00ffff;
+      padding: 10px;
+      text-align: left;
+      font-size: 0.85rem;
+      margin: 12px 0;
+      color: #ccc;
+    }
+
+    .rules-list {
+      text-align: left;
+      font-size: 0.85rem;
+      line-height: 1.4;
+      color: #ddd;
     }
   </style>
 </head>
 <body>
 
-  <div class="battery-container">
-    <div id="batteryFill" class="battery-fill"></div>
+  <!-- MAIN MENU -->
+  <div id="setupScreen" class="card">
+    <h2>FNAF REAL LIFE</h2>
+    <button onclick="startAsHost()">HOST AS GUARD</button>
+    <hr style="border-color:#333; margin: 12px 0;">
+    <input type="text" id="joinCode" placeholder="ENTER ROOM CODE">
+    <button onclick="joinAsMonster()">JOIN AS MONSTER</button>
+    <hr style="border-color:#333; margin: 12px 0;">
+    <button onclick="showScreen('rulesScreen')" style="border-color: #ffaa00; color: #ffaa00;">📖 HOW TO PLAY / RULES</button>
   </div>
-  <div id="statusText" class="status-text">POWER: 100%</div>
 
-  <button id="lightBtn" class="btn">LIGHT</button>
+  <!-- RULES SCREEN -->
+  <div id="rulesScreen" class="card" style="display:none;">
+    <h3 style="color:#ffaa00; margin-top:0;">GAME RULES & SAFETY</h3>
+    <div class="rules-list">
+      <p><b>1. General Safety:</b> Clear all obstacles, trip hazards, and sharp edges from corridors before starting.</p>
+      <p><b>2. Movement Speed:</b> Animatronics must walk slowly (toe-to-heel steps). Absolutely NO running or physical tackle moves allowed.</p>
+      <p><b>3. Blanket Rule:</b> The Guard wears a light blanket or hoodie over their head to limit peripheral vision to light spots only.</p>
+      <p><b>4. Stun Rule:</b> If the Flashlight hits an Animatronic directly, they are frozen for 5 seconds and MUST step back 3 paces.</p>
+      <p><b>5. Win Conditions:</b> Guard wins by surviving until 6 AM. Animatronics win if they manage to gently tap the Guard's shoulder.</p>
+    </div>
+    <button onclick="showScreen('setupScreen')">BACK TO MENU</button>
+  </div>
+
+  <!-- GUARD SCREEN -->
+  <div id="guardScreen" class="card" style="display:none;">
+    <h3 id="roomDisplay" style="margin:5px 0;">ROOM CODE: ---</h3>
+    <div>TIME: <span id="clockText" style="color:#00ffff; font-weight:bold;">12 AM</span></div>
+
+    <div class="guide-box">
+      <b>💡 GUARD GUIDE:</b> Keep your blanket over your head! Hold <i>FLASHLIGHT</i> to spot monsters. Tap <i>WIND GENERATOR</i> so power doesn't hit 0%. Use command buttons to signal monsters.
+    </div>
+
+    <div>FLASHLIGHT POWER</div>
+    <div class="bar-container"><div id="pwrFill" class="bar-fill"></div></div>
+
+    <div>GENERATOR / MUSIC BOX</div>
+    <div class="bar-container"><div id="genFill" class="bar-fill" style="background:#00ffff;"></div></div>
+
+    <button id="lightBtn" style="width:48%;">FLASHLIGHT</button>
+    <button id="windBtn" style="width:48%;">WIND GEN</button>
+    <br>
+    <button onclick="triggerMonsterMove()" style="border-color: #00ff00;">SEND MOVE SIGNAL</button>
+    <button onclick="triggerMonsterFreeze()" style="border-color: #ff0000;">SEND FREEZE SIGNAL</button>
+  </div>
+
+  <!-- MONSTER SCREEN -->
+  <div id="monsterScreen" class="card" style="display:none;">
+    <h2 id="monsterRole" style="margin:5px 0; color:#ff3333;">ANIMATRONIC</h2>
+    
+    <div class="guide-box" style="border-color: #ff3333;">
+      <b>👹 MONSTER GUIDE:</b> Stay hidden in dark hallways. Obey screen signals immediately. Perform your designated sound cues while advancing!
+    </div>
+
+    <div id="actionStatus" class="status-box freeze">WAITING...</div>
+    
+    <div style="border:1px dashed #666; padding:10px; margin:10px 0; text-align:left;">
+      <div style="color:#888; font-size:0.75rem;">CURRENT TASK</div>
+      <div id="promptText" style="font-size:0.95rem; color:#fff; font-weight:bold; margin-top:4px;">
+        Wait for host signal...
+      </div>
+    </div>
+
+    <button id="sabotageBtn" style="background:#440000; border-color:#ff0000; display:none; width:100%;" onclick="triggerSabotage()">
+      ⚡ SABOTAGE GENERATOR (-20%)
+    </button>
+  </div>
 
   <script>
-    let batteryLevel = 100;
+    let peer = null;
+    let connections = [];
+    let conn = null;
+
+    let flashPower = 100;
+    let genPower = 100;
     let isLightOn = false;
     let track = null;
-    let drainInterval = null;
+    let drainTimer = null;
+    let currentHour = 12;
 
-    const batteryFill = document.getElementById('batteryFill');
-    const statusText = document.getElementById('statusText');
-    const lightBtn = document.getElementById('lightBtn');
-
-    // Initialize Camera Torch (Android Chrome)
-    async function initTorch() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' }
-        });
-        track = stream.getVideoTracks()[0];
-      } catch (err) {
-        console.warn("Hardware torch unavailable or permissions denied.");
-      }
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playBeep(freq, type, duration) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+      osc.stop(audioCtx.currentTime + duration);
     }
-    initTorch();
 
-    async function toggleFlashlight(turnOn) {
-      if (batteryLevel <= 0) turnOn = false;
-      isLightOn = turnOn;
+    function showScreen(id) {
+      document.getElementById('setupScreen').style.display = 'none';
+      document.getElementById('rulesScreen').style.display = 'none';
+      document.getElementById('guardScreen').style.display = 'none';
+      document.getElementById('monsterScreen').style.display = 'none';
+      document.getElementById(id).style.display = 'block';
+    }
 
-      // Hardware Flashlight Control
-      if (track) {
-        try {
-          await track.applyConstraints({
-            advanced: [{ torch: isLightOn }]
-          });
-        } catch (e) {
-          console.log("Torch constraint error:", e);
+    async function initCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        track = stream.getVideoTracks()[0];
+      } catch (e) {}
+    }
+
+    function startAsHost() {
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      peer = new Peer('fnaf-' + code);
+
+      peer.on('open', () => {
+        showScreen('guardScreen');
+        document.getElementById('roomDisplay').textContent = "ROOM CODE: " + code;
+        initCamera();
+        startGuardLoop();
+      });
+
+      peer.on('connection', (c) => {
+        connections.push(c);
+        c.on('data', (data) => {
+          if (data.type === 'SABOTAGE') {
+            genPower = Math.max(0, genPower - data.amount);
+            playBeep(150, 'sawtooth', 0.5);
+          }
+        });
+      });
+    }
+
+    function joinAsMonster() {
+      const code = document.getElementById('joinCode').value.trim();
+      if (!code) return alert("Enter Code!");
+
+      peer = new Peer();
+      peer.on('open', () => {
+        conn = peer.connect('fnaf-' + code);
+        
+        conn.on('open', () => {
+          showScreen('monsterScreen');
+        });
+
+        conn.on('data', (data) => {
+          handleMonsterCommand(data);
+        });
+      });
+    }
+
+    function startGuardLoop() {
+      setInterval(() => {
+        if (genPower > 0) genPower -= 0.4;
+        document.getElementById('genFill').style.width = genPower + '%';
+
+        if (genPower <= 0) {
+          playBeep(100, 'sawtooth', 1.5);
+          alert("GENERATOR DIED! MONSTERS WIN!");
+          location.reload();
         }
-      }
+      }, 500);
 
-      // Screen brightness effect fallback / visual cue
-      document.body.style.backgroundColor = isLightOn ? '#ffffff' : '#050505';
+      setInterval(() => {
+        if (currentHour === 12) currentHour = 1;
+        else if (currentHour < 6) currentHour += 1;
+        
+        const clock = document.getElementById('clockText');
+        if (currentHour === 6) {
+          clock.textContent = "6 AM!";
+          clock.style.color = "#00ff00";
+          alert("NIGHT SURVIVED! GUARD WINS!");
+        } else {
+          clock.textContent = currentHour + " AM";
+        }
+      }, 60000);
+
+      const lightBtn = document.getElementById('lightBtn');
+      const windBtn = document.getElementById('windBtn');
+
+      lightBtn.addEventListener('touchstart', (e) => { e.preventDefault(); setTorch(true); });
+      lightBtn.addEventListener('touchend', (e) => { e.preventDefault(); setTorch(false); });
+      lightBtn.addEventListener('mousedown', () => setTorch(true));
+      lightBtn.addEventListener('mouseup', () => setTorch(false));
+      
+      windBtn.addEventListener('click', () => {
+        genPower = Math.min(100, genPower + 12);
+        playBeep(400, 'sine', 0.08);
+      });
+    }
+
+    async function setTorch(on) {
+      if (flashPower <= 0) on = false;
+      isLightOn = on;
+
+      if (track) {
+        try { await track.applyConstraints({ advanced: [{ torch: isLightOn }] }); } catch (e) {}
+      }
+      document.body.style.backgroundColor = isLightOn ? '#333' : '#0b0b0b';
 
       if (isLightOn) {
-        startDrain();
-      } else {
-        stopDrain();
-      }
-    }
-
-    function startDrain() {
-      if (drainInterval) return;
-      drainInterval = setInterval(() => {
-        if (batteryLevel > 0) {
-          batteryLevel -= 1; // Drain speed (1% per tick)
-          updateUI();
-        } else {
-          toggleFlashlight(false);
+        if (!drainTimer) {
+          drainTimer = setInterval(() => {
+            if (flashPower > 0) {
+              flashPower -= 1;
+              document.getElementById('pwrFill').style.width = flashPower + '%';
+            } else { setTorch(false); }
+          }, 200);
         }
-      }, 1000); // Ticks every 300ms (~30 seconds of continuous light)
-    }
-
-    function stopDrain() {
-      clearInterval(drainInterval);
-      drainInterval = null;
-    }
-
-    function updateUI() {
-      batteryFill.style.width = batteryLevel + '%';
-      statusText.textContent = `POWER: ${Math.max(0, batteryLevel)}%`;
-
-      if (batteryLevel > 50) {
-        batteryFill.style.backgroundColor = '#00ff00';
-      } else if (batteryLevel > 20) {
-        batteryFill.style.backgroundColor = '#ffff00';
       } else {
-        batteryFill.style.backgroundColor = '#ff0000';
+        clearInterval(drainTimer);
+        drainTimer = null;
       }
     }
 
-    // Controls: Press & Hold or Tap to Toggle
-    lightBtn.addEventListener('touchstart', (e) => { e.preventDefault(); toggleFlashlight(true); });
-    lightBtn.addEventListener('touchend', (e) => { e.preventDefault(); toggleFlashlight(false); });
-    lightBtn.addEventListener('mousedown', () => toggleFlashlight(true));
-    lightBtn.addEventListener('mouseup', () => toggleFlashlight(false));
+    function triggerMonsterMove() {
+      connections.forEach(c => c.send({ action: 'MOVE' }));
+    }
+
+    function triggerMonsterFreeze() {
+      connections.forEach(c => c.send({ action: 'FREEZE' }));
+    }
+
+    const monsterTasks = [
+      { text: "CRAWL MODE: Take 4 steps while staying under table height!", noise: "Scrape feet on floor" },
+      { text: "VENT CRASH: Take 3 heavy footsteps toward the guard!", noise: "Bang wall twice" },
+      { text: "CREEP MODE: Take 5 slow, silent steps forward.", noise: "Heavy breathing" },
+      { text: "HACK MODE: Walk to a wall switch and tap Sabotage!", noise: "Silent movement" }
+    ];
+
+    function handleMonsterCommand(data) {
+      const status = document.getElementById('actionStatus');
+      const prompt = document.getElementById('promptText');
+      const sabBtn = document.getElementById('sabotageBtn');
+
+      if (data.action === 'MOVE') {
+        const task = monsterTasks[Math.floor(Math.random() * monsterTasks.length)];
+        status.textContent = "ADVANCE!";
+        status.className = "status-box move";
+        prompt.innerHTML = `${task.text}<br><br><span style="color:#ffaa00;">REQUIRED NOISE: ${task.noise}</span>`;
+        playBeep(800, 'square', 0.2);
+
+        if (task.text.includes("HACK MODE")) {
+          sabBtn.style.display = "block";
+        } else {
+          sabBtn.style.display = "none";
+        }
+      } else if (data.action === 'FREEZE') {
+        status.textContent = "FREEZE!";
+        status.className = "status-box freeze";
+        prompt.textContent = "STOP IMMEDIATELY! If caught moving by the flashlight, step back 3 paces.";
+        sabBtn.style.display = "none";
+        playBeep(200, 'sawtooth', 0.4);
+      }
+    }
+
+    function triggerSabotage() {
+      if (conn) {
+        conn.send({ type: 'SABOTAGE', amount: 20 });
+        alert("SABOTAGE SUCCESSFUL! Take 3 steps back.");
+        document.getElementById('sabotageBtn').style.display = "none";
+      }
+    }
   </script>
 </body>
 </html>
