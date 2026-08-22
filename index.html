@@ -85,9 +85,12 @@
 
     .rules-list {
       text-align: left;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       line-height: 1.4;
       color: #ddd;
+      max-height: 320px;
+      overflow-y: auto;
+      padding-right: 5px;
     }
   </style>
 </head>
@@ -101,18 +104,20 @@
     <input type="text" id="joinCode" placeholder="ENTER ROOM CODE">
     <button onclick="joinAsMonster()">JOIN AS MONSTER</button>
     <hr style="border-color:#333; margin: 12px 0;">
-    <button onclick="showScreen('rulesScreen')" style="border-color: #ffaa00; color: #ffaa00;">📖 HOW TO PLAY / RULES</button>
+    <button onclick="showScreen('rulesScreen')" style="border-color: #ffaa00; color: #ffaa00;">📖 FULL MANUAL & RULES</button>
   </div>
 
-  <!-- RULES SCREEN -->
+  <!-- EXPANDED RULES SCREEN -->
   <div id="rulesScreen" class="card" style="display:none;">
-    <h3 style="color:#ffaa00; margin-top:0;">GAME RULES & SAFETY</h3>
+    <h3 style="color:#ffaa00; margin-top:0;">FULL GAME MANUAL</h3>
     <div class="rules-list">
-      <p><b>1. General Safety:</b> Clear all obstacles, trip hazards, and sharp edges from corridors before starting.</p>
-      <p><b>2. Movement Speed:</b> Animatronics must walk slowly (toe-to-heel steps). Absolutely NO running or physical tackle moves allowed.</p>
-      <p><b>3. Blanket Rule:</b> The Guard wears a light blanket or hoodie over their head to limit peripheral vision to light spots only.</p>
-      <p><b>4. Stun Rule:</b> If the Flashlight hits an Animatronic directly, they are frozen for 5 seconds and MUST step back 3 paces.</p>
-      <p><b>5. Win Conditions:</b> Guard wins by surviving until 6 AM. Animatronics win if they manage to gently tap the Guard's shoulder.</p>
+      <p><b>1. Setup & Blanket Rule:</b> Clear all hallways of hazards. Guard sits in a designated chair with a hoodie/blanket covering their head. Guard MUST look down at their lap unless holding the flashlight.</p>
+      <p><b>2. Automatic System Signals:</b> The phone system automatically triggers random MOVE and FREEZE cycles for monsters to prevent cheating.</p>
+      <p><b>3. Monster Movement & Noise:</b> Monsters move heel-to-toe (slow walk) ONLY when their screen displays <b>ADVANCE!</b>. Monsters MUST perform their assigned noise cue while moving so the guard hears them approaching.</p>
+      <p><b>4. Freeze & Stun Rules:</b> When <b>FREEZE!</b> appears, monsters must stop instantly. If the Guard shines their flashlight on a monster, that monster is stunned for 5 seconds and MUST step back 3 full paces.</p>
+      <p><b>5. Sabotage / Hacking:</b> If a monster rolls "HACK MODE", they can approach a room wall or switch and tap <b>SABOTAGE GENERATOR</b> to drain 20% of the Guard's power remotely.</p>
+      <p><b>6. Generator Management:</b> The Guard must regularly tap <b>WIND GEN</b> to keep their power from hitting 0%. Balancing winding and checking for monsters with the light is key!</p>
+      <p><b>7. Winning the Night:</b> The Guard wins by surviving 6 minutes (until 6 AM). Monsters win if the Guard's generator hits 0% or if a monster successfully reaches out and gently taps the Guard's shoulder.</p>
     </div>
     <button onclick="showScreen('setupScreen')">BACK TO MENU</button>
   </div>
@@ -123,7 +128,7 @@
     <div>TIME: <span id="clockText" style="color:#00ffff; font-weight:bold;">12 AM</span></div>
 
     <div class="guide-box">
-      <b>💡 GUARD GUIDE:</b> Keep your blanket over your head! Hold <i>FLASHLIGHT</i> to spot monsters. Tap <i>WIND GENERATOR</i> so power doesn't hit 0%. Use command buttons to signal monsters.
+      <b>💡 GUARD GUIDE:</b> Listen for monster footsteps/sounds! Hold <i>FLASHLIGHT</i> to catch monsters. Tap <i>WIND GEN</i> to keep generator running. System signals monsters automatically!
     </div>
 
     <div>FLASHLIGHT POWER</div>
@@ -134,9 +139,8 @@
 
     <button id="lightBtn" style="width:48%;">FLASHLIGHT</button>
     <button id="windBtn" style="width:48%;">WIND GEN</button>
-    <br>
-    <button onclick="triggerMonsterMove()" style="border-color: #00ff00;">SEND MOVE SIGNAL</button>
-    <button onclick="triggerMonsterFreeze()" style="border-color: #ff0000;">SEND FREEZE SIGNAL</button>
+    
+    <div id="autoSignalStatus" style="margin-top:10px; font-size:0.8rem; color:#aaa;">SYSTEM: AUTOMATIC SIGNALING ACTIVE</div>
   </div>
 
   <!-- MONSTER SCREEN -->
@@ -144,7 +148,7 @@
     <h2 id="monsterRole" style="margin:5px 0; color:#ff3333;">ANIMATRONIC</h2>
     
     <div class="guide-box" style="border-color: #ff3333;">
-      <b>👹 MONSTER GUIDE:</b> Stay hidden in dark hallways. Obey screen signals immediately. Perform your designated sound cues while advancing!
+      <b>👹 MONSTER GUIDE:</b> Stay hidden in shadows. Watch your screen for auto-signals. Execute the assigned movement and sound cue when advancing!
     </div>
 
     <div id="actionStatus" class="status-box freeze">WAITING...</div>
@@ -152,7 +156,7 @@
     <div style="border:1px dashed #666; padding:10px; margin:10px 0; text-align:left;">
       <div style="color:#888; font-size:0.75rem;">CURRENT TASK</div>
       <div id="promptText" style="font-size:0.95rem; color:#fff; font-weight:bold; margin-top:4px;">
-        Wait for host signal...
+        Wait for system signal...
       </div>
     </div>
 
@@ -210,6 +214,7 @@
         document.getElementById('roomDisplay').textContent = "ROOM CODE: " + code;
         initCamera();
         startGuardLoop();
+        startAutoSignalLoop();
       });
 
       peer.on('connection', (c) => {
@@ -281,6 +286,29 @@
       });
     }
 
+    // AUTOMATIC SYSTEM SIGNALS (Prevents Guard Cheating)
+    function startAutoSignalLoop() {
+      function cycle() {
+        // Send MOVE Signal
+        connections.forEach(c => c.send({ action: 'MOVE' }));
+        
+        // Random MOVE duration between 4 and 8 seconds
+        const moveDuration = Math.floor(4000 + Math.random() * 4000);
+
+        setTimeout(() => {
+          // Send FREEZE Signal
+          connections.forEach(c => c.send({ action: 'FREEZE' }));
+          
+          // Random FREEZE duration between 5 and 10 seconds
+          const freezeDuration = Math.floor(5000 + Math.random() * 5000);
+
+          setTimeout(cycle, freezeDuration);
+        }, moveDuration);
+      }
+      
+      setTimeout(cycle, 3000); // Start cycle 3 seconds after room loads
+    }
+
     async function setTorch(on) {
       if (flashPower <= 0) on = false;
       isLightOn = on;
@@ -303,14 +331,6 @@
         clearInterval(drainTimer);
         drainTimer = null;
       }
-    }
-
-    function triggerMonsterMove() {
-      connections.forEach(c => c.send({ action: 'MOVE' }));
-    }
-
-    function triggerMonsterFreeze() {
-      connections.forEach(c => c.send({ action: 'FREEZE' }));
     }
 
     const monsterTasks = [
@@ -340,7 +360,7 @@
       } else if (data.action === 'FREEZE') {
         status.textContent = "FREEZE!";
         status.className = "status-box freeze";
-        prompt.textContent = "STOP IMMEDIATELY! If caught moving by the flashlight, step back 3 paces.";
+        prompt.textContent = "STOP IMMEDIATELY! If caught moving by flashlight, step back 3 paces.";
         sabBtn.style.display = "none";
         playBeep(200, 'sawtooth', 0.4);
       }
