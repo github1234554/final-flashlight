@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FNAF Mobile Client</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
     body {
       background: #080808;
@@ -51,12 +52,14 @@
     .rules-list { text-align: left; font-size: 0.8rem; line-height: 1.4; max-height: 300px; overflow-y: auto; }
     .sab-select { background: #111; color: #ffaa00; border: 1px solid #555; padding: 8px; width: 100%; margin: 4px 0; font-family: monospace; }
     .clock-display { font-size: 1.8rem; color: #00ffff; font-weight: bold; border: 1px dashed #00ffff; padding: 5px; margin: 10px 0; }
+    .net-indicator { font-size: 0.75rem; color: #ffaa00; margin-bottom: 8px; }
   </style>
 </head>
 <body>
 
   <div id="menuScreen" class="card">
     <h2>FNAF MOBILE CLIENT</h2>
+    <div id="netStatus" class="net-indicator">CONNECTING TO STATION...</div>
     <p style="font-size: 0.8rem; color: #aaa;">SELECT YOUR ROLE</p>
     <button onclick="showScreen('guardScreen'); initGuard();">SECURITY GUARD</button>
     <button onclick="showScreen('crawlerScreen'); initRobot('CRAWLER');">ROBOT 1: CRAWLER</button>
@@ -79,7 +82,7 @@
       <p><b>ROBOTS:</b></p>
       <ul>
         <li><b>Independent Movement:</b> Each robot advances on its own separate schedule!</li>
-        <li><b>Drainer Mechanics:</b> Loses 1.5% battery per step. Can steal flashlight power from Guard!</li>
+        <li><b>Drainer Mechanics:</b> Loses 10% battery per step. Can steal flashlight power from Guard!</li>
         <li><b>Station Link:</b> Computer user holds keys to charge your abilities in real time.</li>
       </ul>
     </div>
@@ -118,7 +121,7 @@
     <div id="crawlerPrompt" style="margin:8px 0; font-weight:bold;">---</div>
     <div id="crawlerSound" style="color:#ffaa00; font-size:0.85rem;">---</div>
     <hr style="border-color:#333;">
-    <button id="crawlerAbilityBtn" onclick="activateStealth()">🥷 ACTIVATION: SILENT MOVE (30s)</button>
+    <button id="crawlerAbilityBtn" onclick="activateStealth()" disabled>🥷 ACTIVATION: SILENT MOVE (30s)</button>
     <button onclick="triggerJumpscare()" style="border-color:#ff0000;">😱 JUMPSCARE SOUND</button>
     <button onclick="showScreen('menuScreen')">EXIT TO MENU</button>
   </div>
@@ -128,8 +131,9 @@
     <div id="drainerStatus" class="status-box freeze">WAITING...</div>
     <div id="drainerPrompt" style="margin:8px 0; font-weight:bold;">---</div>
     <div id="drainerSound" style="color:#ffaa00; font-size:0.85rem;">---</div>
+    <div style="font-size: 0.85rem; margin-top: 5px;">BATTERY: <span id="drainerBatText">100</span>%</div>
     <hr style="border-color:#333;">
-    <button id="drainerAbilityBtn" onclick="stealGuardPower()" style="border-color:#00aaff; color:#00aaff;">⚡ STEAL GUARD POWER (-15% Flashlight)</button>
+    <button id="drainerAbilityBtn" onclick="stealGuardPower()" style="border-color:#00aaff; color:#00aaff;" disabled>⚡ STEAL GUARD POWER (-15% Flashlight)</button>
     <button onclick="triggerJumpscare()" style="border-color:#ff0000;">😱 JUMPSCARE SOUND</button>
     <button onclick="showScreen('menuScreen')">EXIT TO MENU</button>
   </div>
@@ -140,7 +144,7 @@
     <div id="tankPrompt" style="margin:8px 0; font-weight:bold;">---</div>
     <div id="tankSound" style="color:#ffaa00; font-size:0.85rem;">---</div>
     <hr style="border-color:#333;">
-    <button id="tankAbilityBtn" onclick="activateImmunity()">🛡️ ACTIVATION: MUSIC BOX IMMUNITY (30s)</button>
+    <button id="tankAbilityBtn" onclick="activateImmunity()" style="border-color:#ffaa00; color:#ffaa00;" disabled>🛡️ ACTIVATION: MUSIC BOX IMMUNITY (30s)</button>
     <button onclick="triggerJumpscare()" style="border-color:#ff0000;">😱 JUMPSCARE SOUND</button>
     <button onclick="showScreen('menuScreen')">EXIT TO MENU</button>
   </div>
@@ -155,7 +159,7 @@
       CATCH_REWARD_MUSIC: 15,             
       MAX_SABOTAGES: 2,                   
       SABOTAGE_COOLDOWN: 120,             
-      DRAINER_DRAIN_PER_STEP: 1.5,        
+      DRAINER_DRAIN_PER_STEP: 10.0,       
       DRAINER_STEAL_AMOUNT: 15,           
       GAME_DURATION_SECONDS: 720,         
       STEALTH_DURATION: 30,               
@@ -179,75 +183,72 @@
     let robotLoops = {};
     let lastAction = {};
     let audioCtx = null;
-    let socket = null;
+    let peer = null;
+    let conn = null;
 
     let robotState = {
-      CRAWLER: { stealthPwr: 100, isStealth: false },
-      DRAINER: { battery: 100, stealPwr: 100 },
-      TANK: { immunityPwr: 100, isImmune: false }
+      CRAWLER: { stealthPwr: 0, isStealth: false },
+      DRAINER: { battery: 100, stealPwr: 0 },
+      TANK: { immunityPwr: 0, isImmune: false }
     };
 
-    function initAudio() {
-      try {
-        if (!audioCtx) {
-          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (audioCtx.state === 'suspended') {
-          audioCtx.resume();
-        }
-      } catch(e) {}
-    }
+    function connectStation() {
+      peer = new Peer();
+      
+      peer.on('open', () => {
+        conn = peer.connect('fnaf-station-host-room-1234');
 
-    function connectWS() {
-      try {
-        socket = new WebSocket('wss://socketsbay.com/wss/v2/1/demo/');
-        socket.onmessage = (e) => {
-          try {
-            const data = JSON.parse(e.data);
-            if (data.type === 'CHARGE_UPDATE') {
-              robotState[data.role][data.statKey] = data.value;
-              
-              // Enable ability buttons when fully charged
-              if (data.role === 'CRAWLER' && data.statKey === 'stealthPwr' && data.value >= 100) {
-                document.getElementById('crawlerAbilityBtn').disabled = false;
-              } else if (data.role === 'DRAINER' && data.statKey === 'stealPwr' && data.value >= 100) {
-                document.getElementById('drainerAbilityBtn').disabled = false;
-              } else if (data.role === 'TANK' && data.statKey === 'immunityPwr' && data.value >= 100) {
-                document.getElementById('tankAbilityBtn').disabled = false;
-              }
-            } else if (data.type === 'UPDATE_BATTERY') {
-              robotState.DRAINER.battery = data.battery;
-            } else if (data.type === 'STEAL_POWER') {
-              flashPwr = Math.max(0, flashPwr - CONFIG.DRAINER_STEAL_AMOUNT);
-              document.getElementById('flashFill').style.width = flashPwr + '%';
+        conn.on('open', () => {
+          document.getElementById('netStatus').textContent = "● STATION CONNECTED";
+          document.getElementById('netStatus').style.color = "#00ff00";
+        });
+
+        conn.on('data', (data) => {
+          if (data.type === 'CHARGE_UPDATE') {
+            robotState[data.role][data.statKey] = data.value;
+            
+            if (data.role === 'CRAWLER' && data.statKey === 'stealthPwr' && data.value >= 100) {
+              document.getElementById('crawlerAbilityBtn').disabled = false;
+            } else if (data.role === 'DRAINER' && data.statKey === 'stealPwr' && data.value >= 100) {
+              document.getElementById('drainerAbilityBtn').disabled = false;
+            } else if (data.role === 'TANK' && data.statKey === 'immunityPwr' && data.value >= 100) {
+              document.getElementById('tankAbilityBtn').disabled = false;
             }
-          } catch(err) {}
-        };
-      } catch(e) {}
+          } else if (data.type === 'UPDATE_BATTERY') {
+            robotState.DRAINER.battery = data.battery;
+            document.getElementById('drainerBatText').textContent = Math.floor(data.battery);
+          }
+        });
+
+        conn.on('close', () => {
+          document.getElementById('netStatus').textContent = "○ STATION DISCONNECTED";
+          document.getElementById('netStatus').style.color = "#ff0000";
+          setTimeout(connectStation, 3000);
+        });
+      });
     }
 
     function broadcast(data) {
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify(data));
-      }
+      if (conn && conn.open) conn.send(data);
     }
 
-    function playRhythmicDeepSteps(stepCount, callback) {
+    function initAudio() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+      } catch(e) {}
+    }
+
+    function playRhythmicDeepSteps(stepCount) {
       initAudio();
       let currentStep = 0;
-
       const baseGain = Math.min(2.5, 1.0 + (stepCount * 0.4));
 
       function playSingleDeepStep() {
-        if (currentStep >= stepCount) {
-          if (callback) callback();
-          return;
-        }
-
+        if (currentStep >= stepCount) return;
         try {
           if (audioCtx) {
             const now = audioCtx.currentTime;
-
             const osc = audioCtx.createOscillator();
             const oscGain = audioCtx.createGain();
 
@@ -263,37 +264,12 @@
 
             osc.start(now);
             osc.stop(now + 0.45);
-
-            const bufferSize = audioCtx.sampleRate * 0.15;
-            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-            const data = buffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) {
-              data[i] = (Math.random() * 2 - 1);
-            }
-
-            const noise = audioCtx.createBufferSource();
-            noise.buffer = buffer;
-
-            const filter = audioCtx.createBiquadFilter();
-            filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(350, now);
-
-            const noiseGain = audioCtx.createGain();
-            noiseGain.gain.setValueAtTime(baseGain * 0.8, now);
-            noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-
-            noise.connect(filter);
-            filter.connect(noiseGain);
-            noiseGain.connect(audioCtx.destination);
-
-            noise.start(now);
           }
         } catch(e) {}
 
         currentStep++;
         setTimeout(playSingleDeepStep, 450);
       }
-
       playSingleDeepStep();
     }
 
@@ -312,14 +288,12 @@
           osc.stop(audioCtx.currentTime + 1.8);
         }
       } catch(e) {}
-
       document.body.style.backgroundColor = "#ff0000";
       setTimeout(() => document.body.style.backgroundColor = "#080808", 500);
     }
 
     function showScreen(id) {
       initAudio();
-      connectWS();
       document.querySelectorAll('.card').forEach(c => c.style.display = 'none');
       document.getElementById(id).style.display = 'block';
     }
@@ -329,9 +303,8 @@
         timeRemaining--;
         let mins = Math.floor(timeRemaining / 60);
         let secs = timeRemaining % 60;
-        let formattedSecs = secs < 10 ? '0' + secs : secs;
         let clockEl = document.getElementById('guardClock');
-        if (clockEl) clockEl.textContent = `${mins}:${formattedSecs}`;
+        if (clockEl) clockEl.textContent = `${mins}:${secs < 10 ? '0' + secs : secs}`;
       }
     }, 1000);
 
@@ -397,7 +370,6 @@
 
     function guardSabotage() {
       if (sabotagesRemaining <= 0) return alert("NO SABOTAGE CHARGES REMAINING!");
-      
       const btn = document.getElementById('sabotageBtn');
       const target = document.getElementById('sabTarget').value;
       
@@ -415,28 +387,22 @@
 
     function stealGuardPower() {
       if (robotState.DRAINER.stealPwr < 100) return alert("Must reach 100% charge at Station first!");
-      
       robotState.DRAINER.stealPwr = 0;
       document.getElementById('drainerAbilityBtn').disabled = true;
       
-      broadcast({ type: 'STEAL_POWER' });
+      flashPwr = Math.max(0, flashPwr - CONFIG.DRAINER_STEAL_AMOUNT);
+      document.getElementById('flashFill').style.width = flashPwr + '%';
+
       broadcast({ type: 'SYNC_ROBOT', role: 'DRAINER', state: robotState.DRAINER });
       alert(`SILENT STEAL ACTIVE!\nStole ${CONFIG.DRAINER_STEAL_AMOUNT}% power from Guard Flashlight!`);
     }
 
     function initRobot(role) {
       if (robotLoops[role]) return;
-
       const profile = CONFIG.ROBOT_TIMINGS[role];
 
       function cycle() {
-        let isMove = false;
-        if (lastAction[role] === 'MOVE') {
-          isMove = false;
-        } else {
-          isMove = Math.random() < profile.moveChance;
-        }
-
+        let isMove = lastAction[role] !== 'MOVE' && Math.random() < profile.moveChance;
         const steps = Math.floor(1 + Math.random() * 3);
         
         let statusEl = role.toLowerCase() + 'Status';
@@ -451,8 +417,10 @@
           document.getElementById(soundEl).textContent = "NOISE: Shutting down...";
         } else if (isMove) {
           lastAction[role] = 'MOVE';
+          
           if (role === 'DRAINER') {
             robotState.DRAINER.battery = Math.max(0, robotState.DRAINER.battery - (steps * CONFIG.DRAINER_DRAIN_PER_STEP));
+            document.getElementById('drainerBatText').textContent = Math.floor(robotState.DRAINER.battery);
             broadcast({ type: 'SYNC_ROBOT', role: 'DRAINER', state: robotState.DRAINER });
           }
 
@@ -483,7 +451,6 @@
 
     function activateStealth() {
       if (robotState.CRAWLER.stealthPwr < 100) return alert("Must reach 100% Stealth charge at Station first!");
-      
       robotState.CRAWLER.isStealth = true;
       robotState.CRAWLER.stealthPwr = 0;
       document.getElementById('crawlerAbilityBtn').disabled = true;
@@ -495,7 +462,6 @@
 
     function activateImmunity() {
       if (robotState.TANK.immunityPwr < 100) return alert("Must reach 100% Immunity charge at Station first!");
-      
       robotState.TANK.isImmune = true;
       robotState.TANK.immunityPwr = 0;
       document.getElementById('tankAbilityBtn').disabled = true;
@@ -504,6 +470,8 @@
       alert("Music Box Immunity Active for 30 Seconds!");
       setTimeout(() => { robotState.TANK.isImmune = false; }, CONFIG.IMMUNITY_DURATION * 1000);
     }
+
+    connectStation();
   </script>
 </body>
 </html>
